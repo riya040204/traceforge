@@ -39,6 +39,9 @@ function App() {
   const [last, setLast] = useState(null),
     [page, setPage] = useState("Dashboard"),
     [range, setRange] = useState("Last 15 minutes");
+  const [traceSearch, setTraceSearch] = useState("");
+  const [traceFilter, setTraceFilter] = useState("All");
+  const [selectedTrace, setSelectedTrace] = useState(null);
   async function refresh() {
     try {
       let r = await fetch(`${API}/api/metrics`);
@@ -107,10 +110,32 @@ function App() {
       setBusy(false);
     }
   }
+  const navItems = [
+    "Dashboard",
+    "Services",
+    "Traces",
+    "Chaos Lab",
+    "Incidents",
+    "SLOs & Reliability",
+    "Reports",
+  ];
   const active = data?.experiment?.active,
     services = data?.services || [],
     traces = [...(data?.latest || [])].reverse().slice(-5).reverse(),
     events = data?.events || [];
+  const filteredTraces = [...(data?.latest || [])].reverse().filter((t) => {
+    const matchesSearch = `${t.trace_id} ${t.endpoint}`
+      .toLowerCase()
+      .includes(traceSearch.toLowerCase());
+
+    const matchesStatus =
+      traceFilter === "All" ||
+      (traceFilter === "Success"
+        ? t.status_code >= 200 && t.status_code < 300
+        : t.status_code >= 400);
+
+    return matchesSearch && matchesStatus;
+  });
   const chart = useMemo(() => {
     let vals = data?.latest || [];
     if (!vals.length) return [35, 36, 34, 37, 35, 36, 35, 34, 36, 35, 36, 35];
@@ -207,264 +232,385 @@ function App() {
               {notice}
             </div>
           )}
-          <div className="layout">
-            <div className="leftcol">
-              <div className="stats">
-                <Stat
-                  title="AVG. LATENCY"
-                  value={`${data?.avg_latency_ms ?? "—"} ms`}
-                  sub={`Baseline ${data?.baseline_latency_ms ?? 35} ms`}
-                  icon={<Clock3 />}
-                  tone={active ? "red" : ""}
-                />
-                <Stat
-                  title="REQUEST RATE"
-                  value={`${data?.requests ?? 0} req`}
-                  sub="Captured demo requests"
-                  icon={<Zap />}
-                />
-                <Stat
-                  title="ERROR RATE"
-                  value={`${data?.error_rate ?? 0}%`}
-                  sub="Payment service"
-                  icon={<AlertTriangle />}
-                />
-                <Stat
-                  title="SERVICE UPTIME"
-                  value={`${data?.uptime ?? 99.9}%`}
-                  sub="Demo environment"
-                  icon={<CheckCircle2 />}
-                  tone="green"
-                />
-              </div>
-              <div className="midgrid">
-                <section className="panel chartpanel">
-                  <div className="paneltitle">
-                    <div>
-                      <h2>Service Health & Latency</h2>
-                      <p>Measured payment endpoint response time</p>
-                    </div>
-                    <span className="legend">
-                      <i /> Latency (ms)
-                    </span>
-                  </div>
-                  <LatencyChart values={chart} />
-                </section>
-                <section className="panel topology">
-                  <div className="paneltitle">
-                    <h2>Service Map</h2>
-                    <span className="muted">LIVE</span>
-                  </div>
-                  <div className="flow">
-                    <div className="node">
-                      {" "}
-                      <Code2 />
-                      <b>Frontend</b>
-                      <small>12 ms</small>
-                    </div>
-                    <div className="connector">↓</div>
-                    <div className="node gateway">
-                      <Layers />
-                      <b>API Gateway</b>
-                      <small>18 ms</small>
-                    </div>
-                    <div className="branches">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                    <div className="nodegrid">
-                      {services.slice(2, 5).map((s) => (
-                        <div
-                          className={`node smallnode ${s.status === "degraded" ? "degraded" : ""}`}
-                          key={s.name}
-                        >
-                          <Server />
-                          <b>{s.name}</b>
-                          <small>{s.latency_ms} ms</small>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              </div>
-              <section className="panel services">
-                <div className="paneltitle">
-                  <h2>
-                    Services Status <span className="count">(5)</span>
-                  </h2>
-                  <span className="muted">Updated automatically</span>
+          {page === "Dashboard" ? (
+            <div className="layout">
+              <div className="leftcol">
+                <div className="stats">
+                  <Stat
+                    title="AVG. LATENCY"
+                    value={`${data?.avg_latency_ms ?? "—"} ms`}
+                    sub={`Baseline ${data?.baseline_latency_ms ?? 35} ms`}
+                    icon={<Clock3 />}
+                    tone={active ? "red" : ""}
+                  />
+                  <Stat
+                    title="REQUEST RATE"
+                    value={`${data?.requests ?? 0} req`}
+                    sub="Captured demo requests"
+                    icon={<Zap />}
+                  />
+                  <Stat
+                    title="ERROR RATE"
+                    value={`${data?.error_rate ?? 0}%`}
+                    sub="Payment service"
+                    icon={<AlertTriangle />}
+                  />
+                  <Stat
+                    title="SERVICE UPTIME"
+                    value={`${data?.uptime ?? 99.9}%`}
+                    sub="Demo environment"
+                    icon={<CheckCircle2 />}
+                    tone="green"
+                  />
                 </div>
-                <div className="servicegrid">
-                  {services.map((s) => (
-                    <div
-                      className={`service ${s.status === "degraded" ? "bad" : ""}`}
-                      key={s.name}
-                    >
-                      <Server />
+                <div className="stats percentile-stats">
+                  <Stat
+                    title="P50 LATENCY"
+                    value={`${data?.p50_latency_ms ?? "—"} ms`}
+                    sub="Median response time"
+                    icon={<Clock3 />}
+                  />
+                  <Stat
+                    title="P95 LATENCY"
+                    value={`${data?.p95_latency_ms ?? "—"} ms`}
+                    sub="95% of requests at or below"
+                    icon={<Clock3 />}
+                  />
+                  <Stat
+                    title="P99 LATENCY"
+                    value={`${data?.p99_latency_ms ?? "—"} ms`}
+                    sub="99% of requests at or below"
+                    icon={<Clock3 />}
+                  />
+                </div>
+                <div className="midgrid">
+                  <section className="panel chartpanel">
+                    <div className="paneltitle">
                       <div>
-                        <b>{s.name}</b>
-                        <small>
-                          <i
-                            className={s.status === "degraded" ? "amber" : ""}
-                          />
-                          {s.status}
-                        </small>
+                        <h2>Service Health & Latency</h2>
+                        <p>Measured payment endpoint response time</p>
                       </div>
-                      <strong>{s.latency_ms} ms</strong>
+                      <span className="legend">
+                        <i /> Latency (ms)
+                      </span>
                     </div>
-                  ))}
+                    <LatencyChart values={chart} />
+                  </section>
+                  <section className="panel topology">
+                    <div className="paneltitle">
+                      <h2>Service Map</h2>
+                      <span className="muted">LIVE</span>
+                    </div>
+                    <div className="flow">
+                      <div className="node">
+                        {" "}
+                        <Code2 />
+                        <b>Frontend</b>
+                        <small>12 ms</small>
+                      </div>
+                      <div className="connector">↓</div>
+                      <div className="node gateway">
+                        <Layers />
+                        <b>API Gateway</b>
+                        <small>18 ms</small>
+                      </div>
+                      <div className="branches">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                      <div className="nodegrid">
+                        {services.slice(2, 5).map((s) => (
+                          <div
+                            className={`node smallnode ${s.status === "degraded" ? "degraded" : ""}`}
+                            key={s.name}
+                          >
+                            <Server />
+                            <b>{s.name}</b>
+                            <small>{s.latency_ms} ms</small>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
                 </div>
-              </section>
-              <div className="bottomgrid">
-                <section className="panel">
+                <section className="panel services">
                   <div className="paneltitle">
-                    <h2>Recent Traces</h2>
-                    <span className="linkish">Latest requests</span>
+                    <h2>
+                      Services Status <span className="count">(5)</span>
+                    </h2>
+                    <span className="muted">Updated automatically</span>
                   </div>
-                  <div className="tracehead">
-                    <span>TRACE ID</span>
-                    <span>ENDPOINT</span>
-                    <span>DURATION</span>
-                    <span>STATUS</span>
-                  </div>
-                  {traces.length ? (
-                    traces.map((t) => (
-                      <div className="tracerow" key={t.trace_id}>
-                        <code>{t.trace_id}</code>
-                        <span>{t.endpoint}</span>
-                        <b>{t.latency_ms} ms</b>
-                        <em className={t.injected_ms ? "slow" : "ok"}>
-                          {t.injected_ms ? "SLOW" : "OK"}
-                        </em>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty">
-                      Send a test request to populate traces.
-                    </div>
-                  )}
-                </section>
-                <section className="panel">
-                  <div className="paneltitle">
-                    <h2>Incident Timeline</h2>
-                    <span className="muted">Recent events</span>
-                  </div>
-                  <div className="timeline">
-                    {events.slice(0, 4).map((e, i) => (
-                      <div className="event" key={`${e.at}-${i}`}>
-                        <i
-                          className={
-                            e.type === "experiment_started" ? "amber" : ""
-                          }
-                        />
+                  <div className="servicegrid">
+                    {services.map((s) => (
+                      <div
+                        className={`service ${s.status === "degraded" ? "bad" : ""}`}
+                        key={s.name}
+                      >
+                        <Server />
                         <div>
-                          <b>{e.message}</b>
-                          <small>{new Date(e.at).toLocaleTimeString()}</small>
+                          <b>{s.name}</b>
+                          <small>
+                            <i
+                              className={s.status === "degraded" ? "amber" : ""}
+                            />
+                            {s.status}
+                          </small>
                         </div>
+                        <strong>{s.latency_ms} ms</strong>
                       </div>
                     ))}
-                    {!events.length && (
-                      <div className="empty">
-                        No incidents or experiment events.
-                      </div>
-                    )}
                   </div>
                 </section>
-              </div>
-            </div>
-            <aside className="panel lab">
-              <div className="labtitle">
-                <div className="flask">
-                  <FlaskConical />
+                <div className="bottomgrid">
+                  <section className="panel">
+                    <div className="paneltitle">
+                      <h2>Recent Traces</h2>
+                      <span className="linkish">Latest requests</span>
+                    </div>
+                    <div className="tracehead">
+                      <span>TRACE ID</span>
+                      <span>ENDPOINT</span>
+                      <span>DURATION</span>
+                      <span>STATUS</span>
+                    </div>
+                    {traces.length ? (
+                      traces.map((t) => (
+                        <div className="tracerow" key={t.trace_id}>
+                          <code>{t.trace_id}</code>
+                          <span>{t.endpoint}</span>
+                          <b>{t.latency_ms} ms</b>
+                          <em className={t.injected_ms ? "slow" : "ok"}>
+                            {t.injected_ms ? "SLOW" : "OK"}
+                          </em>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty">
+                        Send a test request to populate traces.
+                      </div>
+                    )}
+                  </section>
+                  <section className="panel">
+                    <div className="paneltitle">
+                      <h2>Incident Timeline</h2>
+                      <span className="muted">Recent events</span>
+                    </div>
+                    <div className="timeline">
+                      {events.slice(0, 4).map((e, i) => (
+                        <div className="event" key={`${e.at}-${i}`}>
+                          <i
+                            className={
+                              e.type === "experiment_started" ? "amber" : ""
+                            }
+                          />
+                          <div>
+                            <b>{e.message}</b>
+                            <small>{new Date(e.at).toLocaleTimeString()}</small>
+                          </div>
+                        </div>
+                      ))}
+                      {!events.length && (
+                        <div className="empty">
+                          No incidents or experiment events.
+                        </div>
+                      )}
+                    </div>
+                  </section>
                 </div>
-                <div>
-                  <h2>Chaos Experiment Lab</h2>
-                  <p>Inject faults and observe system behavior</p>
+              </div>
+              <aside className="panel lab">
+                <div className="labtitle">
+                  <div className="flask">
+                    <FlaskConical />
+                  </div>
+                  <div>
+                    <h2>Chaos Experiment Lab</h2>
+                    <p>Inject faults and observe system behavior</p>
+                  </div>
                 </div>
-              </div>
-              <label>SELECT TARGET SERVICE</label>
-              <button className="field">
-                <Server size={15} /> Payment Service <ChevronDown size={14} />
-              </button>
-              <label>FAULT TYPE</label>
-              <button className="field">
-                <Clock3 size={15} /> Network Latency <ChevronDown size={14} />
-              </button>
-              <label>
-                LATENCY DELAY <strong>{delay} ms</strong>
-              </label>
-              <input
-                type="range"
-                min="100"
-                max="2000"
-                step="100"
-                value={delay}
-                disabled={active}
-                onChange={(e) => setDelay(+e.target.value)}
-              />
-              <div className="ticks">
-                <span>100 ms</span>
-                <span>2,000 ms</span>
-              </div>
-              <label>DURATION</label>
-              <select
-                value={duration}
-                disabled={active}
-                onChange={(e) => setDuration(+e.target.value)}
-              >
-                <option value="30">30 seconds</option>
-                <option value="60">1 minute</option>
-                <option value="120">2 minutes</option>
-                <option value="300">5 minutes</option>
-              </select>
-              <button
-                className={active ? "stop" : "run"}
-                disabled={busy || (!active && false)}
-                onClick={active ? stop : start}
-              >
-                {active ? (
-                  <>
-                    <Square size={15} /> Stop Experiment
-                  </>
-                ) : (
-                  <>
-                    <Play size={15} /> Run Experiment
-                  </>
+                <label>SELECT TARGET SERVICE</label>
+                <button className="field">
+                  <Server size={15} /> Payment Service <ChevronDown size={14} />
+                </button>
+                <label>FAULT TYPE</label>
+                <button className="field">
+                  <Clock3 size={15} /> Network Latency <ChevronDown size={14} />
+                </button>
+                <label>
+                  LATENCY DELAY <strong>{delay} ms</strong>
+                </label>
+                <input
+                  type="range"
+                  min="100"
+                  max="2000"
+                  step="100"
+                  value={delay}
+                  disabled={active}
+                  onChange={(e) => setDelay(+e.target.value)}
+                />
+                <div className="ticks">
+                  <span>100 ms</span>
+                  <span>2,000 ms</span>
+                </div>
+                <label>DURATION</label>
+                <select
+                  value={duration}
+                  disabled={active}
+                  onChange={(e) => setDuration(+e.target.value)}
+                >
+                  <option value="30">30 seconds</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                  <option value="300">5 minutes</option>
+                </select>
+                <button
+                  className={active ? "stop" : "run"}
+                  disabled={busy || (!active && false)}
+                  onClick={active ? stop : start}
+                >
+                  {active ? (
+                    <>
+                      <Square size={15} /> Stop Experiment
+                    </>
+                  ) : (
+                    <>
+                      <Play size={15} /> Run Experiment
+                    </>
+                  )}
+                </button>
+                <button className="testrequest" disabled={busy} onClick={test}>
+                  <Zap size={15} /> Send Test Payment Request
+                </button>
+                {last && (
+                  <div className="lastresult">
+                    <span>LAST BROWSER REQUEST</span>
+                    <b>{last.ms} ms</b>
+                    <small>
+                      HTTP {last.status} · {last.result}
+                    </small>
+                  </div>
                 )}
-              </button>
-              <button className="testrequest" disabled={busy} onClick={test}>
-                <Zap size={15} /> Send Test Payment Request
-              </button>
-              {last && (
-                <div className="lastresult">
-                  <span>LAST BROWSER REQUEST</span>
-                  <b>{last.ms} ms</b>
-                  <small>
-                    HTTP {last.status} · {last.result}
-                  </small>
+                <div className={`experimentbox ${active ? "running" : ""}`}>
+                  <CheckCircle2 />
+                  <div>
+                    <b>
+                      {active ? "Experiment Running" : "Ready to Experiment"}
+                    </b>
+                    <p>
+                      {active
+                        ? `Injecting ${data.experiment.delay_ms}ms latency into Payment Service.`
+                        : "Start a controlled experiment to observe service degradation."}
+                    </p>
+                    {active && (
+                      <small>Auto-expires when its duration ends.</small>
+                    )}
+                  </div>
+                </div>
+                <div className="safety">
+                  <ShieldCheck size={15} /> Fault injection is restricted to the
+                  local demo payment endpoint.
+                </div>
+              </aside>
+            </div>
+          ) : page === "Traces" ? (
+            <section className="panel traces-page">
+              <div className="paneltitle">
+                <div>
+                  <h2>Distributed Traces</h2>
+                  <p>Live request-level execution data</p>
+                </div>
+                <span className="muted">
+                  {data?.latest?.length || 0} traces captured
+                </span>
+              </div>
+              <div className="trace-controls">
+                <input
+                  type="text"
+                  placeholder="Search by Trace ID or endpoint..."
+                  value={traceSearch}
+                  onChange={(e) => setTraceSearch(e.target.value)}
+                />
+
+                <select
+                  value={traceFilter}
+                  onChange={(e) => setTraceFilter(e.target.value)}
+                >
+                  <option value="All">All Requests</option>
+                  <option value="Success">Successful</option>
+                  <option value="Failed">Failed</option>
+                </select>
+              </div>
+
+              <div className="tracehead">
+                <span>TRACE ID</span>
+                <span>ENDPOINT</span>
+                <span>DURATION</span>
+                <span>STATUS</span>
+              </div>
+
+              {filteredTraces.map((t) => (
+                <div
+                  className="tracerow clickable-trace"
+                  key={t.trace_id}
+                  onClick={() => setSelectedTrace(t)}
+                >
+                  <code>{t.trace_id}</code>
+                  <span>{t.endpoint}</span>
+                  <b>{t.latency_ms} ms</b>
+                  <em className={t.status_code === 200 ? "ok" : "slow"}>
+                    {t.status_code}
+                  </em>
+                </div>
+              ))}
+
+              {!data?.latest?.length && (
+                <div className="empty">
+                  No traces captured yet. Send a test payment request.
                 </div>
               )}
-              <div className={`experimentbox ${active ? "running" : ""}`}>
-                <CheckCircle2 />
-                <div>
-                  <b>{active ? "Experiment Running" : "Ready to Experiment"}</b>
+
+              {selectedTrace && (
+                <div className="trace-details">
+                  <div className="paneltitle">
+                    <h2>Trace Details</h2>
+                    <button onClick={() => setSelectedTrace(null)}>
+                      Close ×
+                    </button>
+                  </div>
+
                   <p>
-                    {active
-                      ? `Injecting ${data.experiment.delay_ms}ms latency into Payment Service.`
-                      : "Start a controlled experiment to observe service degradation."}
+                    <b>Trace ID:</b> {selectedTrace.trace_id}
                   </p>
-                  {active && (
-                    <small>Auto-expires when its duration ends.</small>
-                  )}
+                  <p>
+                    <b>Endpoint:</b> {selectedTrace.endpoint}
+                  </p>
+                  <p>
+                    <b>Latency:</b> {selectedTrace.latency_ms} ms
+                  </p>
+                  <p>
+                    <b>Injected Delay:</b> {selectedTrace.injected_ms} ms
+                  </p>
+                  <p>
+                    <b>HTTP Status:</b> {selectedTrace.status_code}
+                  </p>
+                  <p>
+                    <b>Experiment Active:</b>{" "}
+                    {selectedTrace.experiment_active ? "Yes" : "No"}
+                  </p>
+                  <p>
+                    <b>Timestamp:</b>{" "}
+                    {new Date(selectedTrace.at).toLocaleString()}
+                  </p>
                 </div>
-              </div>
-              <div className="safety">
-                <ShieldCheck size={15} /> Fault injection is restricted to the
-                local demo payment endpoint.
-              </div>
-            </aside>
-          </div>
+              )}
+            </section>
+          ) : (
+            <section className="panel">
+              <h2>{page}</h2>
+              <p>This workspace is being built.</p>
+            </section>
+          )}
 
           <footer>
             TRACEFORGE <span>·</span> OBSERVABILITY & CHAOS ENGINEERING{" "}

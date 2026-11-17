@@ -1,3 +1,4 @@
+import math
 import asyncio
 import time
 import uuid
@@ -19,6 +20,16 @@ experiment = {"active": False, "delay_ms": 500, "expires_at": None, "id": None, 
 samples = deque(maxlen=120)
 events = deque(maxlen=40)
 BASELINE_MS = 35.0
+
+def calculate_percentile(values, percentile):
+    if not values:
+        return 0.0
+
+    sorted_values = sorted(values)
+
+    rank = max(1, math.ceil((percentile / 100) * len(sorted_values)))
+
+    return round(sorted_values[rank - 1], 2)
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -97,10 +108,27 @@ async def metrics():
     baseline_values = [x["latency_ms"] for x in values if x["injected_ms"] == 0]
     baseline = round(sum(baseline_values) / len(baseline_values), 2) if baseline_values else BASELINE_MS
     avg = round(sum(x["latency_ms"] for x in values) / len(values), 2) if values else 0
+    p50 = calculate_percentile(
+    [x["latency_ms"] for x in values], 50
+    )
+
+    p95 = calculate_percentile(
+    [x["latency_ms"] for x in values], 95
+    )
+  
+    p99 = calculate_percentile(
+    [x["latency_ms"] for x in values], 99
+)
+
     return {
         "system_status": "degraded" if experiment["active"] else "healthy",
         "experiment": {k: experiment[k] for k in ("active", "delay_ms", "expires_at", "id", "started_at")},
-        "requests": len(values), "avg_latency_ms": avg, "baseline_latency_ms": baseline,
+        "requests": len(values),
+"avg_latency_ms": avg,
+"baseline_latency_ms": baseline,
+"p50_latency_ms": p50,
+"p95_latency_ms": p95,
+"p99_latency_ms": p99,
         "error_rate": 0, "uptime": 99.9,
         "latest": list(reversed(values[-30:])), "events": list(events)[:12],
         "services": [
